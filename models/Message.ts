@@ -5,6 +5,7 @@ export type StressLevel = "LOW" | "MEDIUM" | "HIGH";
 export interface MessageDocument {
   text: string;
   stress: StressLevel;
+  sleep?: string;
   createdAt: Date;
 }
 
@@ -20,6 +21,11 @@ const MessageSchema = new Schema<MessageDocument>(
       type: String,
       enum: ["LOW", "MEDIUM", "HIGH"],
       required: true,
+    },
+    sleep: {
+      type: String,
+      enum: ["GOOD", "POOR"],
+      required: false,
     },
     createdAt: {
       type: Date,

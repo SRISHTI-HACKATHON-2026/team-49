@@ -5,6 +5,7 @@ export interface UserDocument {
   name?: string;
   role: "informal" | "formal";
   interests?: string[];
+  doctorEmail?: string;
   createdAt: Date;
 }
 
@@ -26,6 +27,10 @@ const UserSchema = new Schema<UserDocument>(
     interests: {
       type: [String],
       default: [],
+    },
+    doctorEmail: {
+      type: String,
+      required: false,
     },
     createdAt: {
       type: Date,

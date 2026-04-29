@@ -63,11 +63,13 @@ function detectHighSignal(input: string): "POSITIVE" | "NEGATIVE" | "NEUTRAL" {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { text?: string; language?: string; history?: Array<{role: string, text: string}>; email?: string };
+    const body = (await request.json()) as { text?: string; language?: string; history?: Array<{role: string, text: string}>; email?: string; sleep?: string; currentRisk?: number };
     const text = body.text?.trim();
     const language = body.language?.trim();
     const history = body.history || [];
     const email = body.email;
+    const sleep = body.sleep;
+    const currentRisk = body.currentRisk ?? 0;
 
     if (!text) {
       return NextResponse.json({ error: "Message text is required." }, { status: 400 });
@@ -92,13 +94,15 @@ export async function POST(request: Request) {
       await Message.create({
         text,
         stress,
+        sleep,
         createdAt,
       });
 
-      const recentMessages = await Message.find({}, { stress: 1, _id: 0 })
+      const recentMessages = await Message.find({}, { stress: 1, sleep: 1, _id: 0 })
         .sort({ createdAt: -1 })
         .limit(8)
-        .lean<Array<{ stress: StressLevel }>>();
+        .lean<Array<{ stress: StressLevel, sleep?: string }>>();
+        
       recentPattern = summarizeRecentPattern(recentMessages.map((item) => item.stress));
     } catch (dbError) {
       console.error("[POST /api/chat] Mongo write failed, using memory fallback.", dbError);
@@ -106,6 +110,10 @@ export async function POST(request: Request) {
       const recentMemory = getMemoryHistory().slice(-8);
       recentPattern = summarizeRecentPattern(recentMemory.map((item) => item.stress));
     }
+
+    // Incremental risk: adjust the frontend's current score based on this message's AI classification
+    const { adjustRisk } = await import("@/lib/risk");
+    const riskScore = adjustRisk(currentRisk, stress, sleep);
 
     let userRole = "informal";
     let userInterests: string[] = [];
@@ -124,7 +132,7 @@ export async function POST(request: Request) {
     let reply: string;
     let suggestions: string[] = [];
     try {
-      const generated = await generateReply(text, stress, recentPattern, highSignal, language, history, userInterests);
+      const generated = await generateReply(text, stress, recentPattern, highSignal, language, history, userInterests, riskScore);
       reply = generated.reply;
       suggestions = generated.suggestions;
       
@@ -170,7 +178,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ reply, stress, suggestions });
+    return NextResponse.json({ reply, stress, suggestions, riskScore, alert: riskScore > 60 });
   } catch (error) {
     console.error("[POST /api/chat] Unhandled error.", error);
     return NextResponse.json(

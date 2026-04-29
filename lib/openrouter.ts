@@ -50,9 +50,15 @@ Quiet, observant, non-judgmental. Match user intensity without exaggerating.
 
 FINAL INSTRUCTION:
 Always reflect intensity and context, not just positive vs negative sentiment.
-CRITICAL: You MUST return your response as a valid JSON object with two fields:
-- "reply": Your conversational response (string)
-- "suggestions": An array of 2-3 short, actionable suggestion phrases (e.g., ["Take a short walk", "Listen to music"]) tailored to the user's current context, stress, and language (string array). Ensure the suggestions are in the SAME language/script as the reply.`;
+
+RESPONSE FORMAT (MANDATORY - NO EXCEPTIONS):
+You MUST respond with ONLY a valid JSON object. Do NOT write any text before or after the JSON.
+The JSON must have exactly two fields:
+{"reply": "your conversational response here", "suggestions": ["suggestion 1", "suggestion 2"]}
+Rules:
+- "reply" = your conversational response (string)
+- "suggestions" = array of 2-3 short, actionable suggestion phrases in the SAME language as the reply
+- Output ONLY the JSON object, nothing else. No markdown, no explanation, no preamble.`;
 
 export async function classifyStress(userMessage: string): Promise<StressLevel> {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -121,7 +127,8 @@ export async function generateReply(
   highSignal?: "POSITIVE" | "NEGATIVE" | "NEUTRAL",
   language?: string,
   history?: Array<{role: string, text: string}>,
-  userInterests?: string[]
+  userInterests?: string[],
+  riskScore?: number
 ) {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -173,19 +180,29 @@ export async function generateReply(
   let reply = content;
   let suggestions: string[] = [];
 
+  // Try direct JSON parse first
   try {
     const parsed = JSON.parse(content);
     if (parsed.reply) reply = parsed.reply;
     if (parsed.suggestions && Array.isArray(parsed.suggestions)) suggestions = parsed.suggestions;
   } catch (e) {
+    // Try extracting JSON from mixed text+JSON output
     const match = content.match(/\{[\s\S]*\}/);
     if (match) {
       try {
         const parsed = JSON.parse(match[0]);
         if (parsed.reply) reply = parsed.reply;
         if (parsed.suggestions && Array.isArray(parsed.suggestions)) suggestions = parsed.suggestions;
-      } catch (err) {}
+      } catch (err) {
+        // JSON was malformed, strip any JSON fragments from the reply
+        reply = content.replace(/\{[\s\S]*$/, "").trim() || content;
+      }
     }
+  }
+
+  // Final safety: strip any leftover JSON from reply text
+  if (reply.includes('{"reply"') || reply.includes('{"suggestions"')) {
+    reply = reply.replace(/\s*\{[\s\S]*$/, "").trim();
   }
 
   return { reply, suggestions };

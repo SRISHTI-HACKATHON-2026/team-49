@@ -60,6 +60,11 @@ export default function Home() {
   const [customInterest, setCustomInterest] = useState("");
   const [language, setLanguage] = useState(SUPPORTED_LANGUAGES[0].code);
 
+  // Doctor Email State
+  const [savedDoctorEmail, setSavedDoctorEmail] = useState<string | null>(null);
+  const [doctorEmailInput, setDoctorEmailInput] = useState("");
+  const autoReportSentRef = useRef(false);
+
   // Premium State
   const [isPremiumOpen, setIsPremiumOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState("Standard");
@@ -92,6 +97,16 @@ export default function Home() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Burnout Risk State
+  const [riskScore, setRiskScore] = useState(0);
+  const [burnoutAlert, setBurnoutAlert] = useState(false);
+  const [sleepQuality, setSleepQuality] = useState<"GOOD" | "POOR">("GOOD");
+  const [shareLocation, setShareLocation] = useState(false);
+  const [breathingGame, setBreathingGame] = useState(false);
+  const [breathPhase, setBreathPhase] = useState<"inhale" | "hold" | "exhale">("inhale");
+  const [breathCount, setBreathCount] = useState(0);
+  const breathTimerRef = useRef<any>(null);
+
   const handleSplineMouseDown = (e: any) => {
     console.log("Clicked Spline Object:", e.target?.name);
     if (view === "landing") {
@@ -118,6 +133,8 @@ export default function Home() {
             else setRole(null);
             if (data.interests && data.interests.length > 0) setInterests(data.interests);
             else setInterests(null);
+            if (data.doctorEmail) setSavedDoctorEmail(data.doctorEmail);
+            else setSavedDoctorEmail(null);
           }
         } catch (e) {
           console.error("Failed to check role", e);
@@ -126,6 +143,7 @@ export default function Home() {
       } else {
         setRole(null);
         setInterests(null);
+        setSavedDoctorEmail(null);
       }
       setAuthLoading(false);
     });
@@ -177,6 +195,24 @@ export default function Home() {
       }
     } catch (e) {
       console.error("Failed to save interests", e);
+    }
+    setIsCheckingRole(false);
+  };
+
+  const saveDoctorEmail = async () => {
+    if (!user?.email || !doctorEmailInput.includes("@")) return;
+    setIsCheckingRole(true);
+    try {
+      const res = await fetch("/api/user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email, doctorEmail: doctorEmailInput.trim() })
+      });
+      if (res.ok) {
+        setSavedDoctorEmail(doctorEmailInput.trim());
+      }
+    } catch (e) {
+      console.error("Failed to save doctor email", e);
     }
     setIsCheckingRole(false);
   };
@@ -306,6 +342,46 @@ export default function Home() {
 
   // History fetching disabled to ensure a completely fresh session.
 
+  // Breathing Game Timer
+  useEffect(() => {
+    if (!breathingGame) {
+      if (breathTimerRef.current) clearInterval(breathTimerRef.current);
+      return;
+    }
+
+    // Phase durations: inhale 4s, hold 2s, exhale 4s = 10s total
+    const phases: Array<{ name: "inhale" | "hold" | "exhale"; duration: number }> = [
+      { name: "inhale", duration: 4000 },
+      { name: "hold", duration: 2000 },
+      { name: "exhale", duration: 4000 },
+    ];
+    let phaseIndex = 0;
+    setBreathPhase(phases[0].name);
+
+    const advancePhase = () => {
+      phaseIndex = (phaseIndex + 1) % phases.length;
+      setBreathPhase(phases[phaseIndex].name);
+      // Count a breath after each full exhale
+      if (phases[phaseIndex].name === "inhale") {
+        setBreathCount(c => c + 1);
+      }
+    };
+
+    // Use a cycling timeout approach for variable durations
+    let timeout: any;
+    const scheduleNext = (idx: number) => {
+      timeout = setTimeout(() => {
+        advancePhase();
+        scheduleNext((idx + 1) % phases.length);
+      }, phases[idx].duration);
+    };
+    scheduleNext(0);
+
+    return () => {
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [breathingGame]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -385,6 +461,47 @@ export default function Home() {
     await signOut(auth);
   };
 
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
+
+  // Auto Report State
+  const [autoReportBanner, setAutoReportBanner] = useState<"sending" | "sent" | "failed" | null>(null);
+
+  const downloadReport = async () => {
+    setIsDownloadingReport(true);
+    try {
+      const response = await fetch("/api/generate-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user?.email,
+          riskScore,
+          sleepQuality,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        alert(err.error || "Failed to generate report.");
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `care-companion-report-${Date.now()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Report download failed", err);
+      alert("Failed to download report. Please try again.");
+    } finally {
+      setIsDownloadingReport(false);
+    }
+  };
+
   // Replaced by initialized recognition logic
 
   async function handleChatSubmit(event?: FormEvent<HTMLFormElement>, overrideText?: string) {
@@ -413,15 +530,74 @@ export default function Home() {
           text, 
           language,
           history: messages.slice(-8).map(m => ({ role: m.role, text: m.text })),
-          email: user?.email
+          email: user?.email,
+          sleep: sleepQuality,
+          currentRisk: riskScore
         }),
       });
-      const data = (await response.json()) as { reply?: string; stress?: StressLevel; suggestions?: string[] };
+      const data = (await response.json()) as { reply?: string; stress?: StressLevel; suggestions?: string[]; riskScore?: number; alert?: boolean };
 
       if (!response.ok || typeof data.reply !== "string") {
         throw new Error("Unable to get response.");
       }
       const replyText = data.reply;
+
+      // Update burnout risk
+      if (data.riskScore !== undefined) {
+        setRiskScore(data.riskScore);
+
+        // Auto-send report to doctor when risk >= 85
+        if (data.riskScore >= 85 && savedDoctorEmail && !autoReportSentRef.current) {
+          autoReportSentRef.current = true;
+          setAutoReportBanner("sending");
+
+          // Capture location if user consented, then send report
+          const sendReport = (loc?: { lat: number; lng: number }) => {
+            fetch("/api/send-report", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: user?.email,
+                doctorEmail: savedDoctorEmail,
+                riskScore: data.riskScore,
+                sleepQuality,
+                shareLocation: shareLocation,
+                location: loc,
+              }),
+            })
+              .then((res) => {
+                if (res.ok) {
+                  setAutoReportBanner("sent");
+                } else {
+                  setAutoReportBanner("failed");
+                  autoReportSentRef.current = false;
+                }
+                setTimeout(() => setAutoReportBanner(null), 5000);
+              })
+              .catch(() => {
+                setAutoReportBanner("failed");
+                autoReportSentRef.current = false;
+                setTimeout(() => setAutoReportBanner(null), 5000);
+              });
+          };
+
+          if (shareLocation && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                sendReport({ lat: position.coords.latitude, lng: position.coords.longitude });
+              },
+              () => {
+                // Location failed — send without location
+                sendReport();
+              },
+              { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            );
+          } else {
+            sendReport();
+          }
+        }
+      }
+      if (data.alert) setBurnoutAlert(true);
 
       setMessages((current) => [
         ...current,
@@ -557,7 +733,46 @@ export default function Home() {
              </button>
            </div>
         </section>
-      ) : user && role && interests ? (
+      ) : user && role && interests && !savedDoctorEmail ? (
+        /* ─── Doctor Email Onboarding Step ─── */
+        <section className={`pointer-events-auto relative z-10 mx-4 md:mx-auto mt-4 md:mt-0 flex h-[calc(100dvh-2rem)] md:h-[92vh] w-[calc(100%-2rem)] md:w-full max-w-[640px] flex-col items-center justify-center overflow-hidden rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-[10px] ring-[#FF8C42]/5 transition-all duration-700 ease-in-out`}>
+           <div className="text-center px-8 w-full max-w-md relative z-10">
+             <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#FFF7F2] border border-[#FF8C42]/10 shadow-sm">
+               <span className="text-3xl">🩺</span>
+             </div>
+             <h2 className="text-[2rem] font-bold text-[#1A1A1A] mb-2 tracking-tight">Your Doctor's Email</h2>
+             <p className="text-[14.5px] text-slate-500 mb-8 font-medium">We'll automatically send a stress report to your doctor if your burnout risk gets too high.</p>
+             
+             <div className="mb-6">
+               <input 
+                 type="email" 
+                 value={doctorEmailInput}
+                 onChange={e => setDoctorEmailInput(e.target.value)}
+                 onKeyDown={e => {
+                   if (e.key === 'Enter' && doctorEmailInput.includes('@')) {
+                     saveDoctorEmail();
+                   }
+                 }}
+                 placeholder="doctor@hospital.com"
+                 className="w-full rounded-xl border border-slate-200 bg-slate-50 py-4 px-5 text-[15px] text-[#1A1A1A] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-[#FF8C42] focus:bg-white focus:ring-4 focus:ring-[#FF8C42]/10"
+               />
+             </div>
+
+             <div className="flex items-start gap-3 mb-8 rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-left">
+               <span className="text-emerald-500 text-lg mt-0.5">🛡️</span>
+               <p className="text-[12.5px] text-emerald-700 leading-relaxed">When your stress risk reaches <strong>85% or higher</strong>, a detailed PDF report will be automatically emailed to your doctor with stress patterns, sleep data, and personalized recommendations.</p>
+             </div>
+
+             <button 
+               onClick={saveDoctorEmail}
+               disabled={!doctorEmailInput.includes('@') || isCheckingRole}
+               className="w-full py-4 rounded-xl bg-[#FF8C42] text-white font-semibold shadow-lg shadow-[#FF8C42]/20 hover:bg-[#ff7a29] transition-all disabled:opacity-50 disabled:pointer-events-none"
+             >
+               {isCheckingRole ? "Saving..." : "Continue"}
+             </button>
+           </div>
+        </section>
+      ) : user && role && interests && savedDoctorEmail ? (
         <section className={`pointer-events-auto relative z-10 mx-2 md:ml-auto md:mr-8 lg:mr-16 mt-2 md:mt-0 flex h-[calc(100dvh-1rem)] md:h-[92vh] w-[calc(100%-1rem)] md:w-full max-w-[700px] flex-col overflow-hidden rounded-3xl md:rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-4 md:ring-[10px] ring-[#FF8C42]/5 transition-all duration-1000 ease-in-out`}>
           
           {/* Aesthetic Decor */}
@@ -622,6 +837,63 @@ export default function Home() {
             </div>
           )}
 
+          {/* Burnout Alert Banner */}
+          {burnoutAlert && (
+            <div className="relative z-50 flex items-center justify-between bg-gradient-to-r from-red-500 to-red-600 px-4 sm:px-8 py-3 text-white animate-fade-in-up">
+              <div className="flex items-center gap-3">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+                </span>
+                <span className="text-[13px] font-semibold">⚠️ Burnout Risk Detected — Risk Score: {riskScore}/100</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => {
+                    setBreathingGame(true);
+                    setBreathPhase("inhale");
+                    setBreathCount(0);
+                  }}
+                  className="rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-1.5 text-[12px] font-bold text-white border border-white/30 transition-all hover:scale-105 active:scale-95"
+                >
+                  🎮 Play Breathing Game
+                </button>
+                <button onClick={() => setBurnoutAlert(false)} className="text-white/80 hover:text-white text-lg font-bold transition-colors">✕</button>
+              </div>
+            </div>
+          )}
+
+          {/* Auto Report Notification Banner */}
+          {autoReportBanner && (
+            <div className={`relative z-50 flex items-center justify-between px-4 sm:px-8 py-3 text-white animate-fade-in-up ${
+              autoReportBanner === "sending" ? "bg-gradient-to-r from-blue-500 to-blue-600" :
+              autoReportBanner === "sent" ? "bg-gradient-to-r from-emerald-500 to-emerald-600" :
+              "bg-gradient-to-r from-amber-500 to-amber-600"
+            }`}>
+              <div className="flex items-center gap-3">
+                {autoReportBanner === "sending" && (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>
+                    <span className="text-[13px] font-semibold">📧 Sending stress report to your doctor automatically...</span>
+                  </>
+                )}
+                {autoReportBanner === "sent" && (
+                  <>
+                    <span className="text-lg">✅</span>
+                    <span className="text-[13px] font-semibold">Report sent to {savedDoctorEmail} successfully!</span>
+                  </>
+                )}
+                {autoReportBanner === "failed" && (
+                  <>
+                    <span className="text-lg">⚠️</span>
+                    <span className="text-[13px] font-semibold">Failed to send report. Will retry on next high-risk detection.</span>
+                  </>
+                )}
+              </div>
+              <button onClick={() => setAutoReportBanner(null)} className="text-white/80 hover:text-white text-lg font-bold transition-colors">✕</button>
+            </div>
+          )}
+
           <header className={`flex flex-col sm:flex-row items-center justify-between gap-4 border-b bg-white px-4 sm:px-8 py-4 sm:py-5 transition-colors duration-1000 border-slate-100 relative`}>
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-3">
@@ -643,6 +915,28 @@ export default function Home() {
                 <span>⭐</span> Premium
               </button>
 
+              {/* Download Report Button */}
+              <button
+                onClick={downloadReport}
+                disabled={isDownloadingReport}
+                className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600 shadow-sm transition-all hover:bg-slate-50 hover:scale-105 hover:shadow-md disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {isDownloadingReport ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-[#FF8C42]"></span>
+                    Generating...
+                  </span>
+                ) : (
+                  <><span>📄</span> Report</>
+                )}
+              </button>
+
+              {/* Auto Report Indicator */}
+              <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-emerald-600">
+                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500"></div>
+                Auto-report ON
+              </div>
+
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
@@ -658,6 +952,19 @@ export default function Home() {
                 {currentStress === "HIGH" && (
                   <div className="h-2 w-2 rounded-full bg-[#FF4D4D] shadow-[0_0_8px_rgba(255,77,77,0.4)] animate-pulse" />
                 )}
+              </div>
+              {/* Risk Score Gauge */}
+              <div className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest transition-all ${
+                riskScore > 60 ? 'bg-red-50 text-red-600 border border-red-200' :
+                riskScore > 30 ? 'bg-amber-50 text-amber-600 border border-amber-200' :
+                'bg-emerald-50 text-emerald-600 border border-emerald-200'
+              }`}>
+                <div className={`h-2 w-2 rounded-full ${
+                  riskScore > 60 ? 'bg-red-500 animate-pulse' :
+                  riskScore > 30 ? 'bg-amber-500' :
+                  'bg-emerald-500'
+                }`}></div>
+                Risk {riskScore}
               </div>
             </div>
             <div className="absolute bottom-0 left-8 right-8 h-[1px] bg-gradient-to-r from-transparent via-[#FF8C42]/30 to-transparent"></div>
@@ -741,7 +1048,49 @@ export default function Home() {
 
 
 
-          <div className="mx-8 mb-8 relative group">
+          {/* Quick Mood Buttons & Sleep Toggle */}
+          <div className="mx-4 sm:mx-8 mb-3 flex flex-wrap items-center gap-3">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Quick Check-in:</span>
+            {[{label: "😊 Good", value: "I'm feeling good today."}, {label: "😐 Okay", value: "I'm feeling okay, nothing special."}, {label: "😰 Stressed", value: "I'm feeling really stressed and overwhelmed."}].map(btn => (
+              <button
+                key={btn.label}
+                type="button"
+                onClick={() => handleChatSubmit(undefined, btn.value)}
+                disabled={isSendingChat}
+                className="rounded-full border border-[#FF8C42]/20 bg-[#FFF7F2] px-4 py-2 text-[12.5px] font-semibold text-[#FF8C42] shadow-sm transition-all hover:bg-[#FF8C42] hover:text-white hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {btn.label}
+              </button>
+            ))}
+            <div className="ml-auto flex items-center gap-3">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Sleep:</span>
+              <button
+                type="button"
+                onClick={() => setSleepQuality(sleepQuality === "GOOD" ? "POOR" : "GOOD")}
+                className={`rounded-full px-4 py-2 text-[12.5px] font-semibold border shadow-sm transition-all hover:scale-105 active:scale-95 ${
+                  sleepQuality === "GOOD" 
+                    ? "bg-emerald-50 text-emerald-600 border-emerald-200" 
+                    : "bg-red-50 text-red-600 border-red-200"
+                }`}
+              >
+                {sleepQuality === "GOOD" ? "😴 Good" : "😵 Poor"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareLocation(!shareLocation)}
+                title={shareLocation ? "Location sharing enabled for emergency reports" : "Enable location sharing in emergency reports"}
+                className={`rounded-full px-3 py-2 text-[12.5px] font-semibold border shadow-sm transition-all hover:scale-105 active:scale-95 ${
+                  shareLocation 
+                    ? "bg-blue-50 text-blue-600 border-blue-200" 
+                    : "bg-slate-50 text-slate-400 border-slate-200"
+                }`}
+              >
+                {shareLocation ? "📍 Location ON" : "📍 Off"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mx-4 sm:mx-8 mb-8 relative group">
             <form
               onSubmit={handleChatSubmit}
               className="relative flex flex-col gap-2 rounded-2xl bg-white p-2 shadow-[0_4px_20px_rgba(0,0,0,0.05)] border border-slate-100 transition-all duration-300 focus-within:border-[#FF8C42]/40 focus-within:ring-4 focus-within:ring-[#FF8C42]/10"
@@ -1043,6 +1392,116 @@ export default function Home() {
            </div>
         </div>
       </div>
+
+      {/* Breathing Exercise Game Overlay */}
+      {breathingGame && (
+        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a] transition-all duration-700">
+          
+          {/* Stars / ambient particles */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            {Array.from({ length: 20 }).map((_, i) => (
+              <div
+                key={i}
+                className="absolute rounded-full bg-white/10 animate-pulse"
+                style={{
+                  width: `${2 + Math.random() * 4}px`,
+                  height: `${2 + Math.random() * 4}px`,
+                  top: `${Math.random() * 100}%`,
+                  left: `${Math.random() * 100}%`,
+                  animationDelay: `${Math.random() * 3}s`,
+                  animationDuration: `${2 + Math.random() * 4}s`,
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Breath count */}
+          <div className="absolute top-8 right-8 text-white/40 text-[13px] font-bold uppercase tracking-widest">
+            Breaths: {breathCount}
+          </div>
+
+          {/* Central breathing circle */}
+          <div className="relative flex flex-col items-center gap-10">
+            {/* Outer glow ring */}
+            <div
+              className="absolute rounded-full transition-all ease-in-out"
+              style={{
+                width: breathPhase === "inhale" ? "280px" : breathPhase === "hold" ? "280px" : "160px",
+                height: breathPhase === "inhale" ? "280px" : breathPhase === "hold" ? "280px" : "160px",
+                background: `radial-gradient(circle, ${
+                  breathPhase === "inhale" ? "rgba(56, 189, 248, 0.15)" :
+                  breathPhase === "hold" ? "rgba(250, 204, 21, 0.12)" :
+                  "rgba(52, 211, 153, 0.15)"
+                } 0%, transparent 70%)`,
+                transitionDuration: breathPhase === "inhale" ? "4s" : breathPhase === "hold" ? "0.3s" : "4s",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+              }}
+            />
+
+            {/* Main circle */}
+            <div
+              className="relative rounded-full flex items-center justify-center shadow-2xl transition-all ease-in-out"
+              style={{
+                width: breathPhase === "inhale" ? "220px" : breathPhase === "hold" ? "220px" : "120px",
+                height: breathPhase === "inhale" ? "220px" : breathPhase === "hold" ? "220px" : "120px",
+                background: breathPhase === "inhale"
+                  ? "linear-gradient(135deg, #38bdf8, #818cf8)"
+                  : breathPhase === "hold"
+                  ? "linear-gradient(135deg, #facc15, #fb923c)"
+                  : "linear-gradient(135deg, #34d399, #2dd4bf)",
+                transitionDuration: breathPhase === "inhale" ? "4s" : breathPhase === "hold" ? "0.3s" : "4s",
+                boxShadow: `0 0 60px ${
+                  breathPhase === "inhale" ? "rgba(56, 189, 248, 0.4)" :
+                  breathPhase === "hold" ? "rgba(250, 204, 21, 0.3)" :
+                  "rgba(52, 211, 153, 0.4)"
+                }`,
+              }}
+            >
+              <span className="text-white text-2xl font-bold tracking-wide drop-shadow-lg select-none">
+                {breathPhase === "inhale" ? "Inhale" : breathPhase === "hold" ? "Hold" : "Exhale"}
+              </span>
+            </div>
+
+            {/* Phase instruction */}
+            <p className="text-white/60 text-[15px] font-medium tracking-wide mt-4">
+              {breathPhase === "inhale"
+                ? "Breathe in slowly through your nose..."
+                : breathPhase === "hold"
+                ? "Gently hold your breath..."
+                : "Slowly release through your mouth..."}
+            </p>
+
+            {/* Timer dots */}
+            <div className="flex items-center gap-3 mt-2">
+              {["inhale", "hold", "exhale"].map((phase) => (
+                <div
+                  key={phase}
+                  className={`h-2.5 w-2.5 rounded-full transition-all duration-500 ${
+                    breathPhase === phase
+                      ? phase === "inhale" ? "bg-sky-400 scale-150 shadow-[0_0_12px_rgba(56,189,248,0.6)]"
+                        : phase === "hold" ? "bg-yellow-400 scale-150 shadow-[0_0_12px_rgba(250,204,21,0.6)]"
+                        : "bg-emerald-400 scale-150 shadow-[0_0_12px_rgba(52,211,153,0.6)]"
+                      : "bg-white/20"
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Stop & Exit Button */}
+          <button
+            onClick={() => {
+              setBreathingGame(false);
+              if (breathTimerRef.current) clearInterval(breathTimerRef.current);
+            }}
+            className="absolute bottom-12 rounded-full border-2 border-white/20 bg-white/10 backdrop-blur-sm px-10 py-4 text-[15px] font-bold text-white tracking-wide shadow-lg transition-all hover:bg-white/20 hover:border-white/40 hover:scale-105 active:scale-95"
+          >
+            ⏹ Stop & Exit
+          </button>
+        </div>
+      )}
     </main>
   );
 }

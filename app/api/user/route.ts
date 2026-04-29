@@ -12,9 +12,9 @@ export async function GET(request: Request) {
     }
 
     await connectToDatabase();
-    const user = await User.findOne({ email }).lean() as { role?: string, interests?: string[] } | null;
+    const user = await User.findOne({ email }).lean() as { role?: string, interests?: string[], doctorEmail?: string } | null;
 
-    return NextResponse.json({ role: user?.role || null, interests: user?.interests || null });
+    return NextResponse.json({ role: user?.role || null, interests: user?.interests || null, doctorEmail: user?.doctorEmail || null });
   } catch (error) {
     console.error("[GET /api/user] Failed to fetch user", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, role, name, interests } = body;
+    const { email, role, name, interests, doctorEmail } = body;
 
     if (!email) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
@@ -44,15 +44,18 @@ export async function POST(request: Request) {
     if (interests && Array.isArray(interests)) {
       updatePayload.interests = interests;
     }
+    if (doctorEmail !== undefined) {
+      updatePayload.doctorEmail = doctorEmail;
+    }
 
     // Upsert user
     const user = await User.findOneAndUpdate(
       { email },
       { $set: updatePayload, $setOnInsert: { createdAt: new Date() } },
       { upsert: true, new: true }
-    ).lean() as { role?: string, interests?: string[] };
+    ).lean() as { role?: string, interests?: string[], doctorEmail?: string };
 
-    return NextResponse.json({ success: true, role: user.role, interests: user.interests });
+    return NextResponse.json({ success: true, role: user.role, interests: user.interests, doctorEmail: user.doctorEmail });
   } catch (error) {
     console.error("[POST /api/user] Failed to update user", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

@@ -38,7 +38,7 @@ STRICT RULES:
 
 RESPONSE STRATEGY:
 - Match emotional intensity, not sentiment.
-- If stress is HIGH (negative) or MEDIUM: You MUST gently suggest 1-2 small, practical activities to reduce stress. CRITICAL: Your suggestions MUST be strictly tailored and highly relevant to the specific context, physical state, or specific problems mentioned in the user's message. Do NOT blindly default to generic advice (like "take a walk" or "breathe deeply") unless it logically fits their exact situation. Keep your tailored suggestions warm, empathetic, and conversational.
+- If stress is HIGH (negative) or MEDIUM: Respond empathetically to their situation. Do NOT give explicit recommendations or suggestions for activities in your text. The system provides separate suggestion chips. Just be supportive and natural, e.g., "Sounds like a long stretch. Hope you get a quiet minute soon."
 - HIGH positive: respond lightly positive.
 - LOW: calm, neutral, or lightly positive response without suggestions.
 
@@ -49,7 +49,10 @@ TONE:
 Quiet, observant, non-judgmental. Match user intensity without exaggerating.
 
 FINAL INSTRUCTION:
-Always reflect intensity and context, not just positive vs negative sentiment.`;
+Always reflect intensity and context, not just positive vs negative sentiment.
+CRITICAL: You MUST return your response as a valid JSON object with two fields:
+- "reply": Your conversational response (string)
+- "suggestions": An array of 2-3 short, actionable suggestion phrases (e.g., ["Take a short walk", "Listen to music"]) tailored to the user's current context, stress, and language (string array). Ensure the suggestions are in the SAME language/script as the reply.`;
 
 export async function classifyStress(userMessage: string): Promise<StressLevel> {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -117,7 +120,8 @@ export async function generateReply(
   recentPattern?: string,
   highSignal?: "POSITIVE" | "NEGATIVE" | "NEUTRAL",
   language?: string,
-  history?: Array<{role: string, text: string}>
+  history?: Array<{role: string, text: string}>,
+  userInterests?: string[]
 ) {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -144,7 +148,7 @@ export async function generateReply(
         })),
         {
           role: "user",
-          content: `User message: ${userMessage} | Detected stress level: ${stress}${highSignal ? ` | High intensity signal: ${highSignal}` : ""}${recentPattern ? ` | Recent pattern: ${recentPattern}` : ""}`,
+          content: `User message: ${userMessage} | Detected stress level: ${stress}${highSignal ? ` | High intensity signal: ${highSignal}` : ""}${recentPattern ? ` | Recent pattern: ${recentPattern}` : ""}${userInterests?.length ? ` | User Interests: ${userInterests.join(', ')}` : ""}`,
         },
       ],
       temperature: 0.7,
@@ -166,5 +170,23 @@ export async function generateReply(
     throw new Error("OpenRouter returned an empty response.");
   }
 
-  return content;
+  let reply = content;
+  let suggestions: string[] = [];
+
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed.reply) reply = parsed.reply;
+    if (parsed.suggestions && Array.isArray(parsed.suggestions)) suggestions = parsed.suggestions;
+  } catch (e) {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]);
+        if (parsed.reply) reply = parsed.reply;
+        if (parsed.suggestions && Array.isArray(parsed.suggestions)) suggestions = parsed.suggestions;
+      } catch (err) {}
+    }
+  }
+
+  return { reply, suggestions };
 }

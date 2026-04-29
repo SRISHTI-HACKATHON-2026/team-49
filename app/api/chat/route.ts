@@ -63,10 +63,11 @@ function detectHighSignal(input: string): "POSITIVE" | "NEGATIVE" | "NEUTRAL" {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { text?: string; language?: string; history?: Array<{role: string, text: string}> };
+    const body = (await request.json()) as { text?: string; language?: string; history?: Array<{role: string, text: string}>; email?: string };
     const text = body.text?.trim();
     const language = body.language?.trim();
     const history = body.history || [];
+    const email = body.email;
 
     if (!text) {
       return NextResponse.json({ error: "Message text is required." }, { status: 400 });
@@ -106,9 +107,44 @@ export async function POST(request: Request) {
       recentPattern = summarizeRecentPattern(recentMemory.map((item) => item.stress));
     }
 
+    let userRole = "informal";
+    let userInterests: string[] = [];
+    if (email) {
+      try {
+        await connectToDatabase();
+        const User = (await import("@/models/User")).default;
+        const user = await User.findOne({ email }).lean() as { role?: string, interests?: string[] };
+        if (user?.role) userRole = user.role;
+        if (user?.interests) userInterests = user.interests;
+      } catch (e) {
+        console.error("[POST /api/chat] Failed to fetch user profile", e);
+      }
+    }
+
     let reply: string;
+    let suggestions: string[] = [];
     try {
-      reply = await generateReply(text, stress, recentPattern, highSignal, language, history);
+      const generated = await generateReply(text, stress, recentPattern, highSignal, language, history, userInterests);
+      reply = generated.reply;
+      suggestions = generated.suggestions;
+      
+      // Fallback if AI didn't return suggestions
+      if (!suggestions || suggestions.length === 0) {
+        if (stress === "LOW") {
+           if (userInterests && userInterests.length > 0) {
+             const shuffled = [...userInterests].sort(() => 0.5 - Math.random());
+             suggestions = shuffled.slice(0, 2).map(interest => `Spend some time on ${interest.toLowerCase()}`);
+           } else {
+             suggestions = ["Take a short walk", "Listen to music"];
+           }
+        } else {
+           if (userRole === "informal") {
+             suggestions = ["Take a short pause if possible", "See if someone can share a small task today"];
+           } else {
+             suggestions = ["Consider a quick break between shifts", "Check if workload can be redistributed briefly"];
+           }
+        }
+      }
     } catch {
       if (stress === "HIGH") {
         if (highSignal === "POSITIVE") {
@@ -121,9 +157,20 @@ export async function POST(request: Request) {
       } else {
         reply = "Good to hear your day felt manageable overall.";
       }
+      
+      // Error Fallback suggestions
+      if (stress === "LOW") {
+         suggestions = ["Take a short walk", "Listen to music"];
+      } else {
+         if (userRole === "informal") {
+           suggestions = ["Take a short pause if possible", "See if someone can share a small task today"];
+         } else {
+           suggestions = ["Consider a quick break between shifts", "Check if workload can be redistributed briefly"];
+         }
+      }
     }
 
-    return NextResponse.json({ reply, stress });
+    return NextResponse.json({ reply, stress, suggestions });
   } catch (error) {
     console.error("[POST /api/chat] Unhandled error.", error);
     return NextResponse.json(

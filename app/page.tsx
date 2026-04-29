@@ -489,7 +489,7 @@ export default function Home() {
       </div>
 
       {user && !role ? (
-        <section className={`pointer-events-auto relative z-10 ml-auto mr-4 md:mr-8 lg:mr-16 flex h-[92vh] w-full max-w-[640px] flex-col items-center justify-center overflow-hidden rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-[10px] ring-[#FF8C42]/5 transition-all duration-700 ease-in-out`}>
+        <section className={`pointer-events-auto relative z-10 mx-4 md:mx-auto mt-4 md:mt-0 flex h-[calc(100dvh-2rem)] md:h-[92vh] w-[calc(100%-2rem)] md:w-full max-w-[640px] flex-col items-center justify-center overflow-hidden rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-[10px] ring-[#FF8C42]/5 transition-all duration-700 ease-in-out`}>
            <div className="text-center px-8 w-full max-w-md relative z-10">
              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#FFF7F2] border border-[#FF8C42]/10 shadow-sm">
                <span className="text-3xl">🤝</span>
@@ -511,7 +511,7 @@ export default function Home() {
            </div>
         </section>
       ) : user && role && !interests ? (
-        <section className={`pointer-events-auto relative z-10 ml-auto mr-4 md:mr-8 lg:mr-16 flex h-[92vh] w-full max-w-[640px] flex-col items-center justify-center overflow-hidden rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-[10px] ring-[#FF8C42]/5 transition-all duration-700 ease-in-out`}>
+        <section className={`pointer-events-auto relative z-10 mx-4 md:mx-auto mt-4 md:mt-0 flex h-[calc(100dvh-2rem)] md:h-[92vh] w-[calc(100%-2rem)] md:w-full max-w-[640px] flex-col items-center justify-center overflow-hidden rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-[10px] ring-[#FF8C42]/5 transition-all duration-700 ease-in-out`}>
            <div className="text-center px-8 w-full max-w-md relative z-10">
              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#FFF7F2] border border-[#FF8C42]/10 shadow-sm">
                <span className="text-3xl">🌿</span>
@@ -558,7 +558,7 @@ export default function Home() {
            </div>
         </section>
       ) : user && role && interests ? (
-        <section className={`pointer-events-auto relative z-10 ml-auto mr-4 md:mr-8 lg:mr-16 flex h-[92vh] w-full max-w-[700px] flex-col overflow-hidden rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-[10px] ring-[#FF8C42]/5 transition-all duration-1000 ease-in-out`}>
+        <section className={`pointer-events-auto relative z-10 mx-2 md:ml-auto md:mr-8 lg:mr-16 mt-2 md:mt-0 flex h-[calc(100dvh-1rem)] md:h-[92vh] w-[calc(100%-1rem)] md:w-full max-w-[700px] flex-col overflow-hidden rounded-3xl md:rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-4 md:ring-[10px] ring-[#FF8C42]/5 transition-all duration-1000 ease-in-out`}>
           
           {/* Aesthetic Decor */}
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#FF8C42] via-[#FF4D4D] to-[#FF8C42] opacity-90 z-50"></div>
@@ -622,7 +622,7 @@ export default function Home() {
             </div>
           )}
 
-          <header className={`flex items-center justify-between border-b bg-white px-8 py-5 transition-colors duration-1000 border-slate-100 relative`}>
+          <header className={`flex flex-col sm:flex-row items-center justify-between gap-4 border-b bg-white px-4 sm:px-8 py-4 sm:py-5 transition-colors duration-1000 border-slate-100 relative`}>
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-3">
                 <button onClick={() => setIsSidebarOpen(true)} className="group flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 transition-all hover:bg-slate-100 active:scale-95 text-slate-500 hover:text-[#1A1A1A]">
@@ -630,9 +630,9 @@ export default function Home() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
                 </button>
-                <h1 className="text-[1.15rem] font-semibold tracking-wide text-[#1A1A1A]">Care Companion</h1>
+                <h1 className="text-[1rem] sm:text-[1.15rem] font-semibold tracking-wide text-[#1A1A1A]">Care Companion</h1>
               </div>
-              <p className="text-[13px] text-slate-500 ml-12">A quiet space to share your day</p>
+              <p className="text-[12px] sm:text-[13px] text-slate-500 sm:ml-12 text-center sm:text-left">A quiet space to share your day</p>
             </div>
             <div className="flex items-center gap-4">
               {/* Premium Button */}
@@ -810,7 +810,7 @@ export default function Home() {
           </div>
         </section>
       ) : view === "login" ? (
-        <section className="pointer-events-auto relative z-10 ml-auto mr-4 md:mr-8 lg:mr-16 flex h-[92vh] w-full max-w-[640px] flex-col overflow-hidden rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-[10px] ring-[#FF8C42]/5 transition-all duration-700 ease-in-out animate-[fade-in-up_0.6s_ease-out]">
+        <section className="pointer-events-auto relative z-10 mx-4 md:ml-auto md:mr-8 lg:mr-16 mt-4 md:mt-0 flex h-[calc(100dvh-2rem)] md:h-[92vh] w-[calc(100%-2rem)] md:w-full max-w-[640px] flex-col overflow-hidden rounded-[28px] border-2 border-[#FF8C42]/30 bg-white/95 backdrop-blur-3xl shadow-[0_20px_70px_-10px_rgba(255,140,66,0.25)] ring-[10px] ring-[#FF8C42]/5 transition-all duration-700 ease-in-out animate-[fade-in-up_0.6s_ease-out]">
           
           {/* Aesthetic Decor */}
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#FF8C42] via-[#FF4D4D] to-[#FF8C42] opacity-90 z-50"></div>
@@ -920,10 +920,10 @@ export default function Home() {
       ) : null}
       
       {/* Premium Modal Overlay */}
-      <div className={`absolute inset-0 z-[100] flex items-center justify-center transition-all duration-500 ${isPremiumOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}>
+      <div className={`absolute inset-0 z-[100] flex items-center justify-center p-4 transition-all duration-500 ${isPremiumOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}>
         <div onClick={() => setIsPremiumOpen(false)} className={`absolute inset-0 bg-[#FF8C42]/20 backdrop-blur-md transition-opacity duration-500 ${isPremiumOpen ? "opacity-100" : "opacity-0"}`}></div>
         
-        <div className={`relative z-10 w-[90%] max-w-4xl rounded-[24px] bg-white p-6 md:p-10 shadow-[0_20px_70px_-10px_rgba(255,140,66,0.3)] transition-all duration-500 ${isPremiumOpen ? "scale-100 translate-y-0" : "scale-95 translate-y-8"}`}>
+        <div className={`relative z-10 w-full max-w-4xl max-h-[90dvh] overflow-y-auto scrollbar-hide rounded-[24px] bg-white p-6 md:p-10 shadow-[0_20px_70px_-10px_rgba(255,140,66,0.3)] transition-all duration-500 ${isPremiumOpen ? "scale-100 translate-y-0" : "scale-95 translate-y-8"}`}>
            <h2 className="text-2xl font-bold text-[#1A1A1A] mb-1">Our Pricing Plans</h2>
            <p className="text-[14px] text-slate-500 mb-8">Pick a plan that is best for you</p>
            
